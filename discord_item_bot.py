@@ -9,7 +9,7 @@ HEADER_ROW  = 3   # 0-indexed row that contains column names
 
 # CSV is expected to sit in the same folder as this script
 BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
-SPREADSHEET = os.path.join(BASE_DIR, "Embers_Adrift_Info_-_Weapons_1_.csv")
+SPREADSHEET = os.path.join(BASE_DIR, "Embers_Adrift_Info_-_Weapons_.csv")
 # ───────────────────────────────────────────────────────────────────────────────
 
 # Columns to display and their friendly labels
