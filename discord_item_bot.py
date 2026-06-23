@@ -1,0 +1,261 @@
+import discord
+import pandas as pd
+import os
+
+# ── Configuration ──────────────────────────────────────────────────────────────
+TOKEN       = os.environ.get("DISCORD_TOKEN", "YOUR_BOT_TOKEN_HERE")
+PREFIX      = "?"
+HEADER_ROW  = 3   # 0-indexed row that contains column names
+
+# CSV is expected to sit in the same folder as this script
+BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
+SPREADSHEET = os.path.join(BASE_DIR, "Embers_Adrift_Info_-_Weapons_1_.csv")
+# ───────────────────────────────────────────────────────────────────────────────
+
+# Columns to display and their friendly labels
+DISPLAY_COLS = {
+    "Weapon Name" : "Weapon Name",
+    "Lvl"         : "Lvl",
+    "Tier"        : "Tier",
+    "Dmg Min"     : "Dmg Min",
+    "Dmg Max"     : "Dmg Max",
+    "Delay"       : "Delay",
+    "HH"          : "Hand",
+    "Role"        : "Role",
+    "Haste"       : "Haste",
+    "Hit"         : "Hit",
+    "Pen"         : "Pen",
+    "Pos"         : "Pos",
+    "Dmg"         : "Dmg Bonus",
+    "Combat Mov." : "Combat Mov.",
+    "Block"       : "Block",
+    "Block Value" : "Block Value",
+    "Parry"       : "Parry",
+    "Riposte"     : "Riposte",
+    "Pos Order"   : "Pos Order",
+    "Front Stat"  : "Front Stat",
+    "Front Amt"   : "Front Amt",
+    "Side Stat"   : "Side Stat",
+    "Side Amt"    : "Side Amt",
+    "Rear Stat"   : "Rear Stat",
+    "Rear Amt"    : "Rear Amt",
+    "Other Stats" : "Other Stats",
+    "Source"      : "Source",
+}
+
+# Stats that are only shown when not empty / not zero / not "–"
+CONDITIONAL_COLS = {
+    "Haste", "Hit", "Pen", "Pos", "Dmg Bonus",
+    "Combat Mov.", "Block", "Block Value", "Parry", "Riposte",
+    "Front Stat", "Front Amt", "Side Stat", "Side Amt",
+    "Rear Stat",  "Rear Amt",  "Other Stats",
+}
+
+
+def load_items() -> pd.DataFrame:
+    ext = os.path.splitext(SPREADSHEET)[1].lower()
+    if ext == ".csv":
+        return pd.read_csv(SPREADSHEET, header=HEADER_ROW)
+    return pd.read_excel(SPREADSHEET, header=HEADER_ROW)
+
+
+def is_blank(val) -> bool:
+    """True if a value should be treated as absent."""
+    if val is None:
+        return True
+    s = str(val).strip()
+    return s in ("", "nan", "NaN", "–", "-", "0", "0.0", "None")
+
+
+def fmt(val) -> str:
+    """Format a numeric value cleanly (drop trailing .0)."""
+    try:
+        f = float(val)
+        return str(int(f)) if f == int(f) else str(f)
+    except (ValueError, TypeError):
+        return str(val).strip()
+
+
+def build_stat_block(row: pd.Series) -> str:
+    """
+    Render one weapon as a D&D-style stat block inside a code fence.
+    """
+    name  = row.get("Weapon Name", "Unknown")
+    lvl   = fmt(row.get("Lvl",  "?"))
+    tier  = str(row.get("Tier", "?")).strip()
+    role  = str(row.get("Role", "?")).strip()
+    hand  = str(row.get("HH",   "?")).strip()
+    dmin  = fmt(row.get("Dmg Min", "?"))
+    dmax  = fmt(row.get("Dmg Max", "?"))
+    delay = fmt(row.get("Delay",   "?"))
+
+    lines = []
+    W = 40   # width of the box interior
+
+    def divider(char="─"):
+        return char * W
+
+    def center(text):
+        return text.center(W)
+
+    def kv(label, value, width=W):
+        gap = width - len(label) - len(str(value))
+        return f"{label}{'.' * max(1, gap)}{value}"
+
+    lines.append("```")
+    lines.append("┌" + "─" * W + "┐")
+    lines.append("│" + center(name)                          + "│")
+    lines.append("│" + center(f"Lvl {lvl}  ·  {tier}")      + "│")
+    lines.append("│" + center(f"{role}  ·  {hand}")         + "│")
+    lines.append("├" + divider()                             + "┤")
+
+    # ── Core Combat ──────────────────────────────────────────────────
+    lines.append("│" + center("── COMBAT ──")                + "│")
+    lines.append("│" + kv("  Damage", f"{dmin}–{dmax}")     + "│")
+    lines.append("│" + kv("  Delay",  delay)                 + "│")
+
+    # ── Optional Stats (only if present) ──────────────────────────────
+    opt_stats = []
+    for col, label in [
+        ("Haste",       "Haste"),
+        ("Hit",         "Hit"),
+        ("Pen",         "Pen"),
+        ("Pos",         "Pos"),
+        ("Dmg",         "Dmg Bonus"),
+        ("Combat Mov.", "Combat Mov"),
+        ("Block",       "Block"),
+        ("Block Value", "Block Value"),
+        ("Parry",       "Parry"),
+        ("Riposte",     "Riposte"),
+    ]:
+        val = row.get(col)
+        if not is_blank(val):
+            opt_stats.append((label, fmt(val)))
+
+    if opt_stats:
+        lines.append("├" + divider()                         + "┤")
+        lines.append("│" + center("── STATS ──")             + "│")
+        for label, val in opt_stats:
+            lines.append("│" + kv(f"  {label}", val)         + "│")
+
+    # ── Positional ────────────────────────────────────────────────────
+    pos_order = str(row.get("Pos Order", "")).strip()
+    pos_lines = []
+
+    front_stat = row.get("Front Stat")
+    front_amt  = row.get("Front Amt")
+    if not is_blank(front_stat) and not is_blank(front_amt):
+        pos_lines.append(("Front", f"{front_stat} +{fmt(front_amt)}"))
+
+    side_stat = row.get("Side Stat")
+    side_amt  = row.get("Side Amt")
+    if not is_blank(side_stat) and not is_blank(side_amt):
+        pos_lines.append(("Side", f"{side_stat} +{fmt(side_amt)}"))
+
+    rear_stat = row.get("Rear Stat")
+    rear_amt  = row.get("Rear Amt")
+    if not is_blank(rear_stat) and not is_blank(rear_amt):
+        pos_lines.append(("Rear", f"{rear_stat} +{fmt(rear_amt)}"))
+
+    if pos_lines:
+        lines.append("├" + divider()                                 + "┤")
+        header = f"── POSITIONAL ({pos_order}) ──" if pos_order else "── POSITIONAL ──"
+        lines.append("│" + center(header)                            + "│")
+        for pos, bonus in pos_lines:
+            lines.append("│" + kv(f"  {pos}", bonus)                + "│")
+
+    # ── Other Stats & Source ──────────────────────────────────────────
+    other  = str(row.get("Other Stats", "")).strip()
+    source = str(row.get("Source",      "")).strip()
+
+    if not is_blank(other) or not is_blank(source):
+        lines.append("├" + divider()                                 + "┤")
+        if not is_blank(other):
+            # Wrap long Other Stats across multiple lines
+            words, cur = other.split(), ""
+            wrapped = []
+            for w in words:
+                if len(cur) + len(w) + 1 > W - 4:
+                    wrapped.append(cur)
+                    cur = w
+                else:
+                    cur = (cur + " " + w).strip()
+            if cur:
+                wrapped.append(cur)
+            lines.append("│" + center("── OTHER ──")                + "│")
+            for chunk in wrapped:
+                lines.append("│  " + chunk.ljust(W - 2)             + "│")
+        if not is_blank(source):
+            lines.append("│" + center("── SOURCE ──")               + "│")
+            lines.append("│  " + source.ljust(W - 2)                + "│")
+
+    lines.append("└" + "─" * W + "┘")
+    lines.append("```")
+    return "\n".join(lines)
+
+
+def search_and_format(query: str) -> list[str]:
+    """
+    Search the spreadsheet and return a list of Discord messages
+    (each under 2000 chars) containing stat blocks.
+    """
+    df      = load_items()
+    mask    = df["Weapon Name"].astype(str).str.contains(query, case=False, na=False)
+    results = df[mask]
+
+    # Exclude crafted items (anything with a Skill entry)
+    results = results[results["Skill"].isna() | (results["Skill"].astype(str).str.strip() == "")]
+
+    if results.empty:
+        return [f"❌  No weapons found matching **{query}**."]
+
+    header   = f"🔍  **{len(results)}** result(s) for `{query}`\n"
+    messages = [header]
+    current  = header
+
+    for _, row in results.iterrows():
+        block = build_stat_block(row) + "\n"
+        # Discord message limit is 2000 chars; split if needed
+        if len(current) + len(block) > 1950:
+            messages.append(current)
+            current = block
+        else:
+            current += block
+
+    if current and current != header:
+        messages.append(current)
+
+    return messages
+
+
+# ── Discord client ────────────────────────────────────────────────────────────
+
+intents = discord.Intents.default()
+intents.message_content = True
+client  = discord.Client(intents=intents)
+
+
+@client.event
+async def on_ready():
+    print(f"Logged in as {client.user} (ID: {client.user.id})")
+
+
+@client.event
+async def on_message(message: discord.Message):
+    if message.author == client.user:
+        return
+
+    content = message.content.strip()
+    if not content.startswith(PREFIX):
+        return
+
+    query = content[len(PREFIX):].strip()
+    if not query:
+        return
+
+    messages = search_and_format(query)
+    for msg in messages:
+        await message.channel.send(msg)
+
+
+client.run(TOKEN)
