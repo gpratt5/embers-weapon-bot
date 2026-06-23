@@ -170,6 +170,24 @@ def search_and_format(query: str) -> list[str]:
     if results.empty:
         return [f"❌  No weapons found matching **{query}**."]
 
+    # More than 3 results -- just list names so the user can narrow the search
+    if len(results) > 3:
+        names = results["Weapon Name"].astype(str).tolist()
+        lines = [f"🔍  **{len(results)}** results for `{query}` — please narrow your search:\n"]
+        for name in names:
+            lines.append(f"• {name}")
+        messages = []
+        current = ""
+        for line in lines:
+            if len(current) + len(line) + 1 > 1950:
+                messages.append(current)
+                current = line + "\n"
+            else:
+                current += line + "\n"
+        if current:
+            messages.append(current)
+        return messages
+
     header  = f"🔍  **{len(results)}** result(s) for `{query}`\n"
     current = header
     messages = []
