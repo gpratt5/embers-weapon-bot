@@ -150,8 +150,19 @@ def build_stat_block(row: pd.Series) -> str:
             for chunk in wrapped:
                 lines.append("│  " + chunk.ljust(W - 2)             + "│")
         if not is_blank(source):
+            words, cur = source.split(), ""
+            wrapped_src = []
+            for w in words:
+                if len(cur) + len(w) + 1 > W - 4:
+                    wrapped_src.append(cur)
+                    cur = w
+                else:
+                    cur = (cur + " " + w).strip()
+            if cur:
+                wrapped_src.append(cur)
             lines.append("│" + center("── SOURCE ──")               + "│")
-            lines.append("│  " + source.ljust(W - 2)                + "│")
+            for chunk in wrapped_src:
+                lines.append("│  " + chunk.ljust(W - 2)             + "│")
 
     lines.append("└" + "─" * W + "┘")
     lines.append("```")
