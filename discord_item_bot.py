@@ -12,45 +12,6 @@ BASE_DIR    = os.path.dirname(os.path.abspath(__file__))
 SPREADSHEET = os.path.join(BASE_DIR, "Embers Adrift Info - Weapons.csv")
 # ───────────────────────────────────────────────────────────────────────────────
 
-# Columns to display and their friendly labels
-DISPLAY_COLS = {
-    "Weapon Name" : "Weapon Name",
-    "Lvl"         : "Lvl",
-    "Tier"        : "Tier",
-    "Dmg Min"     : "Dmg Min",
-    "Dmg Max"     : "Dmg Max",
-    "Delay"       : "Delay",
-    "HH"          : "Hand",
-    "Role"        : "Role",
-    "Haste"       : "Haste",
-    "Hit"         : "Hit",
-    "Pen"         : "Pen",
-    "Pos"         : "Pos",
-    "Dmg"         : "Dmg Bonus",
-    "Combat Mov." : "Combat Mov.",
-    "Block"       : "Block",
-    "Block Value" : "Block Value",
-    "Parry"       : "Parry",
-    "Riposte"     : "Riposte",
-    "Pos Order"   : "Pos Order",
-    "Front Stat"  : "Front Stat",
-    "Front Amt"   : "Front Amt",
-    "Side Stat"   : "Side Stat",
-    "Side Amt"    : "Side Amt",
-    "Rear Stat"   : "Rear Stat",
-    "Rear Amt"    : "Rear Amt",
-    "Other Stats" : "Other Stats",
-    "Source"      : "Source",
-}
-
-# Stats that are only shown when not empty / not zero / not "–"
-CONDITIONAL_COLS = {
-    "Haste", "Hit", "Pen", "Pos", "Dmg Bonus",
-    "Combat Mov.", "Block", "Block Value", "Parry", "Riposte",
-    "Front Stat", "Front Amt", "Side Stat", "Side Amt",
-    "Rear Stat",  "Rear Amt",  "Other Stats",
-}
-
 
 def load_items() -> pd.DataFrame:
     ext = os.path.splitext(SPREADSHEET)[1].lower()
@@ -77,9 +38,7 @@ def fmt(val) -> str:
 
 
 def build_stat_block(row: pd.Series) -> str:
-    """
-    Render one weapon as a D&D-style stat block inside a code fence.
-    """
+    """Render one weapon as a D&D-style stat block inside a code fence."""
     name  = row.get("Weapon Name", "Unknown")
     lvl   = fmt(row.get("Lvl",  "?"))
     tier  = str(row.get("Tier", "?")).strip()
@@ -90,7 +49,7 @@ def build_stat_block(row: pd.Series) -> str:
     delay = fmt(row.get("Delay",   "?"))
 
     lines = []
-    W = 40   # width of the box interior
+    W = 44   # width of the box interior (wider to fit pct values)
 
     def divider(char="─"):
         return char * W
@@ -114,7 +73,7 @@ def build_stat_block(row: pd.Series) -> str:
     lines.append("│" + kv("  Damage", f"{dmin}–{dmax}")     + "│")
     lines.append("│" + kv("  Delay",  delay)                 + "│")
 
-    # ── Optional Stats (only if present) ──────────────────────────────
+    # ── Optional Stats (only if present) ─────────────────────────────
     opt_stats = []
     for col, label in [
         ("Haste",       "Haste"),
@@ -138,24 +97,30 @@ def build_stat_block(row: pd.Series) -> str:
         for label, val in opt_stats:
             lines.append("│" + kv(f"  {label}", val)         + "│")
 
-    # ── Positional ────────────────────────────────────────────────────
+    # ── Positional ───────────────────────────────────────────────────
     pos_order = str(row.get("Pos Order", "")).strip()
     pos_lines = []
 
     front_stat = row.get("Front Stat")
     front_amt  = row.get("Front Amt")
+    front_pct  = row.get("Front %")
     if not is_blank(front_stat) and not is_blank(front_amt):
-        pos_lines.append(("Front", f"{front_stat} +{fmt(front_amt)}"))
+        pct = f" ({fmt(front_pct)}%)" if not is_blank(front_pct) else ""
+        pos_lines.append(("Front", f"{front_stat} +{fmt(front_amt)}{pct}"))
 
     side_stat = row.get("Side Stat")
     side_amt  = row.get("Side Amt")
+    side_pct  = row.get("Side %")
     if not is_blank(side_stat) and not is_blank(side_amt):
-        pos_lines.append(("Side", f"{side_stat} +{fmt(side_amt)}"))
+        pct = f" ({fmt(side_pct)}%)" if not is_blank(side_pct) else ""
+        pos_lines.append(("Side", f"{side_stat} +{fmt(side_amt)}{pct}"))
 
     rear_stat = row.get("Rear Stat")
     rear_amt  = row.get("Rear Amt")
+    rear_pct  = row.get("Rear %")
     if not is_blank(rear_stat) and not is_blank(rear_amt):
-        pos_lines.append(("Rear", f"{rear_stat} +{fmt(rear_amt)}"))
+        pct = f" ({fmt(rear_pct)}%)" if not is_blank(rear_pct) else ""
+        pos_lines.append(("Rear", f"{rear_stat} +{fmt(rear_amt)}{pct}"))
 
     if pos_lines:
         lines.append("├" + divider()                                 + "┤")
@@ -171,7 +136,6 @@ def build_stat_block(row: pd.Series) -> str:
     if not is_blank(other) or not is_blank(source):
         lines.append("├" + divider()                                 + "┤")
         if not is_blank(other):
-            # Wrap long Other Stats across multiple lines
             words, cur = other.split(), ""
             wrapped = []
             for w in words:
@@ -195,10 +159,7 @@ def build_stat_block(row: pd.Series) -> str:
 
 
 def search_and_format(query: str) -> list[str]:
-    """
-    Search the spreadsheet and return a list of Discord messages
-    (each under 2000 chars) containing stat blocks.
-    """
+    """Search the spreadsheet and return Discord messages with stat blocks."""
     df      = load_items()
     mask    = df["Weapon Name"].astype(str).str.contains(query, case=False, na=False)
     results = df[mask]
@@ -209,20 +170,19 @@ def search_and_format(query: str) -> list[str]:
     if results.empty:
         return [f"❌  No weapons found matching **{query}**."]
 
-    header   = f"🔍  **{len(results)}** result(s) for `{query}`\n"
-    messages = [header]
-    current  = header
+    header  = f"🔍  **{len(results)}** result(s) for `{query}`\n"
+    current = header
+    messages = []
 
     for _, row in results.iterrows():
         block = build_stat_block(row) + "\n"
-        # Discord message limit is 2000 chars; split if needed
         if len(current) + len(block) > 1950:
             messages.append(current)
             current = block
         else:
             current += block
 
-    if current and current != header:
+    if current:
         messages.append(current)
 
     return messages
